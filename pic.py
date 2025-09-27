@@ -206,6 +206,26 @@ def run_hardware_diagnostics(disp, color_mode):
     
     return True
 
+def reset_display(disp):
+    """Perform a full display reset sequence."""
+    print("Performing full display reset...")
+    
+    # Clear display with black
+    black_img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+    disp.display(black_img)
+    time.sleep(0.1)
+    
+    # Clear with white
+    white_img = Image.new("RGB", (WIDTH, HEIGHT), (255, 255, 255))
+    disp.display(white_img)
+    time.sleep(0.1)
+    
+    # Clear with black again
+    disp.display(black_img)
+    time.sleep(0.2)
+    
+    print("Display reset complete")
+
 def main():
     p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
     p.add_argument("image", nargs="?", help="Path to an image, GIF, or WebP")
@@ -218,6 +238,8 @@ def main():
     p.add_argument("--fps", type=float, default=None, help="Override animated image frame rate (FPS)")
     p.add_argument("--clear", action="store_true", help="Clear display before showing image")
     p.add_argument("--slow-spi", action="store_true", help="Use slower SPI speed to fix display issues")
+    p.add_argument("--ultra-slow", action="store_true", help="Use ultra-slow SPI speed (500kHz) for persistent issues")
+    p.add_argument("--reset-display", action="store_true", help="Perform full display reset before showing image")
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     p.add_argument("--diagnose", action="store_true", help="Run comprehensive hardware diagnostics")
     args = p.parse_args()
@@ -312,10 +334,17 @@ def main():
     if args.landscape:
         args.rotation = 90  # Force 90 degree rotation for landscape
     
-    # Handle slow SPI mode
-    if args.slow_spi:
+    # Handle SPI speed modes
+    if args.ultra_slow:
+        args.speed = 500_000  # Use 500kHz for ultra-slow mode
+        print("Using ultra-slow SPI mode (500kHz) for persistent issues")
+    elif args.slow_spi:
         args.speed = 1_000_000  # Use 1MHz instead of 8MHz
         print("Using slow SPI mode (1MHz) to fix display issues")
+    
+    # Reset display if requested
+    if args.reset_display:
+        reset_display(disp)
     
     # Clear display if requested
     if args.clear:
