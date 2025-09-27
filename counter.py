@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-from gpiozero import Button
-from PIL import Image, ImageDraw, ImageFont
+import time
+from PIL import Image
 from st7735 import ST7735
-from signal import pause
 
-# ==== LCD config (your working params) ====
+# ==== LCD config (your known working values) ====
 DC_PIN, RST_PIN, BL_PIN = 25, 27, 24
 WIDTH, HEIGHT = 128, 128
 OFFSET_LEFT, OFFSET_TOP = 2, 3
@@ -18,34 +17,19 @@ disp = ST7735(
 )
 disp.begin()
 
-# ==== Button (your working one was GPIO13) ====
-BTN = Button(13, pull_up=True, bounce_time=0.2)
+# ==== Colors to test ====
+colors = [
+    ("Red",   (255,   0,   0)),
+    ("Green", (  0, 255,   0)),
+    ("Blue",  (  0,   0, 255)),
+    ("White", (255, 255, 255)),
+    ("Black", (  0,   0,   0)),
+]
 
-counter = 0
-try:
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-except:
-    font = ImageFont.load_default()
-
-def update_display():
-    img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))  # black background
-    draw = ImageDraw.Draw(img)
-    text = str(counter)
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    x, y = (WIDTH - tw) // 2, (HEIGHT - th) // 2
-    draw.text((x, y), text, font=font, fill=(255, 255, 255))
+for name, rgb in colors:
+    print(f"Showing {name}")
+    img = Image.new("RGB", (WIDTH, HEIGHT), rgb)
     disp.display(img)
+    time.sleep(2)
 
-def bump():
-    global counter
-    counter += 1
-    update_display()
-    print(f"Counter = {counter}")
-
-# Draw initial 0
-update_display()
-BTN.when_pressed = bump
-
-print("Press button to increment counter. Ctrl+C to exit.")
-pause()
+print("Done.")
