@@ -20,19 +20,55 @@ class ButtonCounter:
             spi_hz=1_000_000
         )
         
-        # Initialize button
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, 
-                             callback=self.button_pressed, 
-                             bouncetime=int(DEBOUNCE_TIME * 1000))
+        # Initialize button with error handling
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            
+            # Try to add event detection
+            try:
+                GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, 
+                                     callback=self.button_pressed, 
+                                     bouncetime=int(DEBOUNCE_TIME * 1000))
+                self.use_interrupt = True
+                print(f"Button configured on GPIO {BUTTON_PIN} (interrupt mode)")
+            except RuntimeError:
+                print(f"Interrupt mode failed on GPIO {BUTTON_PIN}, using polling mode")
+                self.use_interrupt = False
+                
+        except Exception as e:
+            print(f"GPIO setup failed: {e}")
+            print("Trying alternative GPIO pins...")
+            self.try_alternative_pins()
         
         # Counter state
         self.count = 0
         self.last_press_time = 0
+        self.last_button_state = True  # For polling mode
         
         print("Counter started! Press the button to increment.")
         print("Press Ctrl+C to exit.")
+    
+    def try_alternative_pins(self):
+        """Try alternative GPIO pins for the button"""
+        alternative_pins = [19, 21, 20, 16, 12, 7, 8, 25]
+        
+        for pin in alternative_pins:
+            try:
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+                global BUTTON_PIN
+                BUTTON_PIN = pin
+                self.use_interrupt = True
+                GPIO.add_event_detect(pin, GPIO.FALLING, 
+                                     callback=self.button_pressed, 
+                                     bouncetime=int(DEBOUNCE_TIME * 1000))
+                print(f"Button found on GPIO {pin}!")
+                return
+            except:
+                continue
+        
+        print("No working button pin found, using polling mode")
+        self.use_interrupt = False
         
     def button_pressed(self, channel):
         """Called when button is pressed"""
@@ -82,6 +118,15 @@ class ButtonCounter:
             # White for 20+
             self.lcd.show_color(255, 255, 255)
     
+    def check_button_polling(self):
+        """Check button state in polling mode"""
+        if not self.use_interrupt:
+            current_state = GPIO.input(BUTTON_PIN)
+            # Button pressed when state changes from HIGH to LOW
+            if self.last_button_state and not current_state:
+                self.button_pressed(None)
+            self.last_button_state = current_state
+    
     def run(self):
         """Main loop"""
         try:
@@ -90,7 +135,9 @@ class ButtonCounter:
             
             # Keep running until interrupted
             while True:
-                time.sleep(0.1)
+                if not self.use_interrupt:
+                    self.check_button_polling()
+                time.sleep(0.01)  # Check more frequently in polling mode
                 
         except KeyboardInterrupt:
             print(f"\nFinal count: {self.count}")
