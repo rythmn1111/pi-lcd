@@ -54,37 +54,84 @@ def main():
     p.add_argument("image", nargs="?", default="image.jpg", help="Path to a JPEG (default: image.jpg)")
     p.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0, help="Display rotation")
     p.add_argument("--speed", type=int, default=SPI_HZ, help="SPI speed (Hz)")
+    p.add_argument("--color-mode", choices=("auto", "rgb", "bgr", "invert"), default="auto", 
+                   help="Color mode: auto (try different modes), rgb, bgr, or invert")
     args = p.parse_args()
 
     img_path = Path(args.image)
     if not img_path.exists():
         raise SystemExit(f"Image not found: {img_path}")
 
-    # Try hardware BGR first; if driver doesn't support it, fall back to software swap
-    software_swap = False
-    try:
-        disp = ST7735.ST7735(
-            port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-            width=WIDTH, height=HEIGHT, rotation=args.rotation,
-            spi_speed_hz=args.speed, bgr=True  # preferred
-        )
-    except TypeError:
-        # Older driver without `bgr` kwarg
-        disp = ST7735.ST7735(
-            port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-            width=WIDTH, height=HEIGHT, rotation=args.rotation,
-            spi_speed_hz=args.speed
-        )
-        software_swap = True
+    # Handle color mode based on user preference
+    if args.color_mode == "auto":
+        # Try different color modes to fix inversion
+        # Method 1: Try with bgr=False (RGB mode)
+        try:
+            disp = ST7735.ST7735(
+                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                spi_speed_hz=args.speed, bgr=False  # Try RGB mode first
+            )
+            color_mode = "rgb"
+        except TypeError:
+            # Older driver without `bgr` kwarg - try default
+            try:
+                disp = ST7735.ST7735(
+                    port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                    width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                    spi_speed_hz=args.speed
+                )
+                color_mode = "default"
+            except:
+                # Last resort: try with bgr=True
+                disp = ST7735.ST7735(
+                    port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                    width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                    spi_speed_hz=args.speed, bgr=True
+                )
+                color_mode = "bgr"
+    else:
+        # Use specified color mode
+        if args.color_mode == "rgb":
+            disp = ST7735.ST7735(
+                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                spi_speed_hz=args.speed, bgr=False
+            )
+            color_mode = "rgb"
+        elif args.color_mode == "bgr":
+            disp = ST7735.ST7735(
+                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                spi_speed_hz=args.speed, bgr=True
+            )
+            color_mode = "bgr"
+        else:  # invert mode
+            disp = ST7735.ST7735(
+                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
+                width=WIDTH, height=HEIGHT, rotation=args.rotation,
+                spi_speed_hz=args.speed
+            )
+            color_mode = "invert"
 
     disp.begin()
 
     frame = load_jpeg(img_path, WIDTH, HEIGHT)
 
-    if software_swap:
-        # Swap R/B channels in software if hardware BGR isn't available
+    # Apply color correction based on the mode
+    if color_mode == "bgr":
+        # For BGR mode, swap R and B channels
         r, g, b = frame.split()
         frame = Image.merge("RGB", (b, g, r))
+    elif color_mode == "rgb":
+        # For RGB mode, keep as is
+        pass
+    elif color_mode == "invert":
+        # Invert colors to fix inversion
+        frame = ImageOps.invert(frame)
+    else:
+        # For default mode, try inverting colors to fix the issue
+        frame = ImageOps.invert(frame)
 
     disp.display(frame)  # stays on screen until you draw again
 
