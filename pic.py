@@ -8,7 +8,16 @@ import argparse
 import time
 from pathlib import Path
 from PIL import Image, ImageOps, ImageCms, ExifTags
-import ST7735
+
+# Try new lowercase import first, fall back to old uppercase if needed
+try:
+    import st7735
+    ST7735 = st7735
+except ImportError:
+    try:
+        import ST7735
+    except ImportError:
+        raise ImportError("Neither 'st7735' nor 'ST7735' module found. Please install: pip install st7735")
 
 # ==== Default GPIOs for Waveshare 1.44" HAT (adjust if yours differ) ====
 DC_PIN  = 25
@@ -110,7 +119,7 @@ def create_test_pattern(w: int, h: int) -> Image.Image:
 
 def main():
     p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
-    p.add_argument("image", nargs="?", default="image.jpg", help="Path to an image, GIF, or WebP (default: image.jpg)")
+    p.add_argument("image", nargs="?", help="Path to an image, GIF, or WebP")
     p.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0, help="Display rotation")
     p.add_argument("--landscape", action="store_true", help="Force landscape mode (90 degree rotation)")
     p.add_argument("--speed", type=int, default=SPI_HZ, help="SPI speed (Hz)")
@@ -123,9 +132,37 @@ def main():
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     args = p.parse_args()
 
-    img_path = Path(args.image)
-    if not img_path.exists():
-        raise SystemExit(f"Image not found: {img_path}")
+    # Handle missing image argument
+    if not args.image:
+        if args.test:
+            # Test mode doesn't need an image
+            img_path = None
+        else:
+            # Try to find any image file in current directory
+            image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+            found_image = None
+            for ext in image_extensions:
+                for pattern in [f"*{ext}", f"*{ext.upper()}"]:
+                    import glob
+                    files = glob.glob(pattern)
+                    if files:
+                        found_image = files[0]
+                        break
+                if found_image:
+                    break
+            
+            if found_image:
+                img_path = Path(found_image)
+                print(f"Using found image: {img_path}")
+            else:
+                print("No image specified and no image files found in current directory.")
+                print("Usage: python pic.py <image_file> or python pic.py --test")
+                print("Supported formats: JPG, PNG, GIF, WebP")
+                return
+    else:
+        img_path = Path(args.image)
+        if not img_path.exists():
+            raise SystemExit(f"Image not found: {img_path}")
 
     # Handle color mode based on user preference
     if args.color_mode == "auto":
@@ -216,7 +253,7 @@ def main():
         return
     
     # Check if it's an animated format (GIF or WebP)
-    is_animated = img_path.suffix.lower() in ['.gif', '.webp']
+    is_animated = img_path and img_path.suffix.lower() in ['.gif', '.webp']
     
     if is_animated:
         # Handle animated GIF or WebP
