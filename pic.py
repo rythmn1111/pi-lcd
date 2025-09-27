@@ -136,7 +136,7 @@ def create_diagnostic_pattern(w: int, h: int) -> Image.Image:
     
     return img
 
-def run_hardware_diagnostics(disp, color_mode):
+def run_hardware_diagnostics(disp, color_mode, effective_width=WIDTH):
     """Run comprehensive hardware diagnostics."""
     print("🔍 Running hardware diagnostics...")
     print("=" * 50)
@@ -144,7 +144,7 @@ def run_hardware_diagnostics(disp, color_mode):
     # Test 1: Basic connectivity
     print("Test 1: Basic connectivity...")
     try:
-        black_img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+        black_img = Image.new("RGB", (effective_width, HEIGHT), (0, 0, 0))
         disp.display(black_img)
         time.sleep(0.5)
         print("✅ Display responds to commands")
@@ -164,7 +164,7 @@ def run_hardware_diagnostics(disp, color_mode):
     
     for name, color in colors:
         print(f"  Showing {name}...")
-        test_img = Image.new("RGB", (WIDTH, HEIGHT), color)
+        test_img = Image.new("RGB", (effective_width, HEIGHT), color)
         
         # Apply color correction
         if color_mode == "bgr":
@@ -178,7 +178,7 @@ def run_hardware_diagnostics(disp, color_mode):
     
     # Test 3: Pixel precision test
     print("\nTest 3: Pixel precision test...")
-    diag_img = create_diagnostic_pattern(WIDTH, HEIGHT)
+    diag_img = create_diagnostic_pattern(effective_width, HEIGHT)
     
     # Apply color correction
     if color_mode == "bgr":
@@ -240,6 +240,7 @@ def main():
     p.add_argument("--slow-spi", action="store_true", help="Use slower SPI speed to fix display issues")
     p.add_argument("--ultra-slow", action="store_true", help="Use ultra-slow SPI speed (500kHz) for persistent issues")
     p.add_argument("--reset-display", action="store_true", help="Perform full display reset before showing image")
+    p.add_argument("--crop-right", type=int, default=0, help="Crop N pixels from right edge to avoid noise (default: 0)")
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     p.add_argument("--diagnose", action="store_true", help="Run comprehensive hardware diagnostics")
     args = p.parse_args()
@@ -334,6 +335,11 @@ def main():
     if args.landscape:
         args.rotation = 90  # Force 90 degree rotation for landscape
     
+    # Handle display cropping
+    effective_width = WIDTH - args.crop_right
+    if args.crop_right > 0:
+        print(f"Cropping {args.crop_right} pixels from right edge (effective width: {effective_width})")
+    
     # Handle SPI speed modes
     if args.ultra_slow:
         args.speed = 500_000  # Use 500kHz for ultra-slow mode
@@ -355,13 +361,13 @@ def main():
     
     # Run hardware diagnostics if requested
     if args.diagnose:
-        run_hardware_diagnostics(disp, color_mode)
+        run_hardware_diagnostics(disp, color_mode, effective_width)
         return
     
     # Show test pattern if requested
     if args.test:
         print("Showing test pattern...")
-        test_img = create_test_pattern(WIDTH, HEIGHT)
+        test_img = create_test_pattern(effective_width, HEIGHT)
         
         # Apply color correction
         if color_mode == "bgr":
@@ -381,7 +387,7 @@ def main():
     
     if is_animated:
         # Handle animated GIF or WebP
-        frames, durations = load_animated_frames(img_path, WIDTH, HEIGHT)
+        frames, durations = load_animated_frames(img_path, effective_width, HEIGHT)
         
         if not frames:
             raise SystemExit("No frames found in animated image")
@@ -423,7 +429,7 @@ def main():
                 
     else:
         # Handle static image
-        frame = load_image(img_path, WIDTH, HEIGHT)
+        frame = load_image(img_path, effective_width, HEIGHT)
 
         # Apply color correction based on the mode
         if color_mode == "bgr":
