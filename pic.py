@@ -50,8 +50,8 @@ def load_image(path: Path, w: int, h: int) -> Image.Image:
     canvas.paste(img, (x, y))
     return canvas
 
-def load_gif_frames(path: Path, w: int, h: int) -> list:
-    """Load all frames from a GIF and prepare them for display."""
+def load_animated_frames(path: Path, w: int, h: int) -> list:
+    """Load all frames from an animated image (GIF/WebP) and prepare them for display."""
     frames = []
     durations = []
     
@@ -87,14 +87,15 @@ def load_gif_frames(path: Path, w: int, h: int) -> list:
     return frames, durations
 
 def main():
-    p = argparse.ArgumentParser(description="Show images/GIFs on Waveshare 1.44\" ST7735S")
-    p.add_argument("image", nargs="?", default="image.jpg", help="Path to an image or GIF (default: image.jpg)")
+    p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
+    p.add_argument("image", nargs="?", default="image.jpg", help="Path to an image, GIF, or WebP (default: image.jpg)")
     p.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0, help="Display rotation")
+    p.add_argument("--landscape", action="store_true", help="Force landscape mode (90 degree rotation)")
     p.add_argument("--speed", type=int, default=SPI_HZ, help="SPI speed (Hz)")
     p.add_argument("--color-mode", choices=("auto", "rgb", "bgr", "invert"), default="auto", 
                    help="Color mode: auto (try different modes), rgb, bgr, or invert")
-    p.add_argument("--loop", type=int, default=0, help="Number of times to loop GIF (0 = infinite)")
-    p.add_argument("--fps", type=float, default=None, help="Override GIF frame rate (FPS)")
+    p.add_argument("--loop", type=int, default=0, help="Number of times to loop animated image (0 = infinite)")
+    p.add_argument("--fps", type=float, default=None, help="Override animated image frame rate (FPS)")
     args = p.parse_args()
 
     img_path = Path(args.image)
@@ -155,17 +156,21 @@ def main():
 
     disp.begin()
 
-    # Check if it's a GIF
-    is_gif = img_path.suffix.lower() in ['.gif']
+    # Handle landscape mode
+    if args.landscape:
+        args.rotation = 90  # Force 90 degree rotation for landscape
     
-    if is_gif:
-        # Handle animated GIF
-        frames, durations = load_gif_frames(img_path, WIDTH, HEIGHT)
+    # Check if it's an animated format (GIF or WebP)
+    is_animated = img_path.suffix.lower() in ['.gif', '.webp']
+    
+    if is_animated:
+        # Handle animated GIF or WebP
+        frames, durations = load_animated_frames(img_path, WIDTH, HEIGHT)
         
         if not frames:
-            raise SystemExit("No frames found in GIF")
+            raise SystemExit("No frames found in animated image")
         
-        print(f"Loaded GIF with {len(frames)} frames")
+        print(f"Loaded animated image with {len(frames)} frames")
         
         # Override frame durations if FPS is specified
         if args.fps:
