@@ -117,6 +117,95 @@ def create_test_pattern(w: int, h: int) -> Image.Image:
     
     return img
 
+def create_diagnostic_pattern(w: int, h: int) -> Image.Image:
+    """Create a comprehensive diagnostic pattern."""
+    img = Image.new("RGB", (w, h), (0, 0, 0))
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(img)
+    
+    # Test 1: Solid colors
+    draw.rectangle([0, 0, w, h//4], fill=(255, 0, 0))      # Red
+    draw.rectangle([0, h//4, w, h//2], fill=(0, 255, 0))   # Green  
+    draw.rectangle([0, h//2, w, 3*h//4], fill=(0, 0, 255)) # Blue
+    draw.rectangle([0, 3*h//4, w, h], fill=(255, 255, 255)) # White
+    
+    # Test 2: Pixel-by-pixel test (thin vertical lines)
+    for x in range(0, w, 4):
+        color = (255, 255, 255) if (x // 4) % 2 == 0 else (0, 0, 0)
+        draw.line([(x, 0), (x, h)], fill=color, width=1)
+    
+    return img
+
+def run_hardware_diagnostics(disp, color_mode):
+    """Run comprehensive hardware diagnostics."""
+    print("🔍 Running hardware diagnostics...")
+    print("=" * 50)
+    
+    # Test 1: Basic connectivity
+    print("Test 1: Basic connectivity...")
+    try:
+        black_img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+        disp.display(black_img)
+        time.sleep(0.5)
+        print("✅ Display responds to commands")
+    except Exception as e:
+        print(f"❌ Display not responding: {e}")
+        return False
+    
+    # Test 2: Color channels
+    print("\nTest 2: Color channel test...")
+    colors = [
+        ("Red", (255, 0, 0)),
+        ("Green", (0, 255, 0)), 
+        ("Blue", (0, 0, 255)),
+        ("White", (255, 255, 255)),
+        ("Black", (0, 0, 0))
+    ]
+    
+    for name, color in colors:
+        print(f"  Showing {name}...")
+        test_img = Image.new("RGB", (WIDTH, HEIGHT), color)
+        
+        # Apply color correction
+        if color_mode == "bgr":
+            r, g, b = test_img.split()
+            test_img = Image.merge("RGB", (b, g, r))
+        elif color_mode == "invert":
+            test_img = ImageOps.invert(test_img)
+            
+        disp.display(test_img)
+        time.sleep(1)
+    
+    # Test 3: Pixel precision test
+    print("\nTest 3: Pixel precision test...")
+    diag_img = create_diagnostic_pattern(WIDTH, HEIGHT)
+    
+    # Apply color correction
+    if color_mode == "bgr":
+        r, g, b = diag_img.split()
+        diag_img = Image.merge("RGB", (b, g, r))
+    elif color_mode == "invert":
+        diag_img = ImageOps.invert(diag_img)
+    
+    disp.display(diag_img)
+    print("  Check for:")
+    print("  - 4 horizontal color bands (Red, Green, Blue, White)")
+    print("  - Vertical stripes (should be alternating black/white)")
+    print("  - Any vertical lines or color bleeding")
+    print("  - Any dead pixels or missing areas")
+    
+    time.sleep(3)
+    
+    print("\n" + "=" * 50)
+    print("Diagnostic complete!")
+    print("\nIf you see:")
+    print("✅ All colors display correctly → Hardware is fine, software issue")
+    print("❌ Missing colors or dead areas → Possible hardware issue")
+    print("⚠️  Vertical lines/bleeding → SPI timing issue (fixable)")
+    print("❌ No display at all → Hardware connection issue")
+    
+    return True
+
 def main():
     p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
     p.add_argument("image", nargs="?", help="Path to an image, GIF, or WebP")
@@ -130,6 +219,7 @@ def main():
     p.add_argument("--clear", action="store_true", help="Clear display before showing image")
     p.add_argument("--slow-spi", action="store_true", help="Use slower SPI speed to fix display issues")
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
+    p.add_argument("--diagnose", action="store_true", help="Run comprehensive hardware diagnostics")
     args = p.parse_args()
 
     # Handle missing image argument
@@ -233,6 +323,11 @@ def main():
         black_image = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
         disp.display(black_image)
         time.sleep(0.1)  # Give it time to clear
+    
+    # Run hardware diagnostics if requested
+    if args.diagnose:
+        run_hardware_diagnostics(disp, color_mode)
+        return
     
     # Show test pattern if requested
     if args.test:
