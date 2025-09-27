@@ -68,7 +68,7 @@ def main():
     p.add_argument("--color-mode", choices=("rgb", "bgr", "invert"), default="bgr", 
                    help="Color mode: rgb, bgr, or invert")
     p.add_argument("--loop", type=int, default=0, help="Number of times to loop animated image (0 = infinite)")
-    p.add_argument("--fps", type=float, default=None, help="Override animated image frame rate (FPS)")
+    p.add_argument("--fps", type=float, default=10.0, help="Override animated image frame rate (FPS, default: 10)")
     p.add_argument("--crop-right", type=int, default=0, help="Crop N pixels from right edge to avoid noise (default: 0)")
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     p.add_argument("--diagnose", action="store_true", help="Run comprehensive hardware diagnostics")
@@ -149,11 +149,10 @@ def main():
         
         print(f"Loaded animated image with {len(frames)} frames")
         
-        # Override frame durations if FPS is specified
-        if args.fps:
-            frame_duration = 1000 / args.fps  # Convert FPS to milliseconds
-            durations = [frame_duration] * len(frames)
-            print(f"Using {args.fps} FPS ({frame_duration:.1f}ms per frame)")
+        # Override frame durations with specified FPS
+        frame_duration = 1000 / args.fps  # Convert FPS to milliseconds
+        durations = [frame_duration] * len(frames)
+        print(f"Using {args.fps} FPS ({frame_duration:.1f}ms per frame)")
         
         loop_count = 0
         while True:
