@@ -86,6 +86,28 @@ def load_animated_frames(path: Path, w: int, h: int) -> list:
     
     return frames, durations
 
+def create_test_pattern(w: int, h: int) -> Image.Image:
+    """Create a test pattern to help diagnose display issues."""
+    img = Image.new("RGB", (w, h), (0, 0, 0))  # Start with black
+    
+    # Draw colored rectangles to test display
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(img)
+    
+    # Red rectangle (top-left)
+    draw.rectangle([0, 0, w//2, h//2], fill=(255, 0, 0))
+    
+    # Green rectangle (top-right)
+    draw.rectangle([w//2, 0, w, h//2], fill=(0, 255, 0))
+    
+    # Blue rectangle (bottom-left)
+    draw.rectangle([0, h//2, w//2, h], fill=(0, 0, 255))
+    
+    # White rectangle (bottom-right)
+    draw.rectangle([w//2, h//2, w, h], fill=(255, 255, 255))
+    
+    return img
+
 def main():
     p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
     p.add_argument("image", nargs="?", default="image.jpg", help="Path to an image, GIF, or WebP (default: image.jpg)")
@@ -96,6 +118,9 @@ def main():
                    help="Color mode: auto (try different modes), rgb, bgr, or invert")
     p.add_argument("--loop", type=int, default=0, help="Number of times to loop animated image (0 = infinite)")
     p.add_argument("--fps", type=float, default=None, help="Override animated image frame rate (FPS)")
+    p.add_argument("--clear", action="store_true", help="Clear display before showing image")
+    p.add_argument("--slow-spi", action="store_true", help="Use slower SPI speed to fix display issues")
+    p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     args = p.parse_args()
 
     img_path = Path(args.image)
@@ -159,6 +184,36 @@ def main():
     # Handle landscape mode
     if args.landscape:
         args.rotation = 90  # Force 90 degree rotation for landscape
+    
+    # Handle slow SPI mode
+    if args.slow_spi:
+        args.speed = 1_000_000  # Use 1MHz instead of 8MHz
+        print("Using slow SPI mode (1MHz) to fix display issues")
+    
+    # Clear display if requested
+    if args.clear:
+        print("Clearing display...")
+        black_image = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+        disp.display(black_image)
+        time.sleep(0.1)  # Give it time to clear
+    
+    # Show test pattern if requested
+    if args.test:
+        print("Showing test pattern...")
+        test_img = create_test_pattern(WIDTH, HEIGHT)
+        
+        # Apply color correction
+        if color_mode == "bgr":
+            r, g, b = test_img.split()
+            test_img = Image.merge("RGB", (b, g, r))
+        elif color_mode == "invert":
+            test_img = ImageOps.invert(test_img)
+        
+        disp.display(test_img)
+        print("Test pattern displayed. Check for:")
+        print("- Red (top-left), Green (top-right), Blue (bottom-left), White (bottom-right)")
+        print("- Any vertical lines or color bleeding")
+        return
     
     # Check if it's an animated format (GIF or WebP)
     is_animated = img_path.suffix.lower() in ['.gif', '.webp']
