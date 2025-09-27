@@ -4,11 +4,11 @@ from PIL import Image, ImageDraw, ImageFont
 from st7735 import ST7735
 from signal import pause
 
-# ==== LCD config (tuned for Waveshare 1.44") ====
+# ==== LCD config (for Waveshare 1.44" ST7735S) ====
 DC_PIN, RST_PIN, BL_PIN = 25, 27, 24
 WIDTH, HEIGHT = 128, 128
 OFFSET_LEFT, OFFSET_TOP = 2, 3
-SPI_HZ = 2_000_000  # raise if stable
+SPI_HZ = 2_000_000
 BGR, INVERT, ROTATION = True, False, 0
 
 disp = ST7735(
@@ -19,25 +19,28 @@ disp = ST7735(
 )
 disp.begin()
 
-# ==== Button ====
-BTN = Button(13, pull_up=True, bounce_time=0.2)  # BCM 13 = DOWN
+# ==== Button (replace 13 if your working pin is different) ====
+BTN = Button(13, pull_up=True, bounce_time=0.2)
 
-# ==== Counter state ====
+# ==== Counter ====
 counter = 0
 
 # ==== Font setup ====
 try:
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+    font = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40
+    )
 except:
     font = ImageFont.load_default()
 
 def update_display():
-    """Draw current counter on screen."""
+    """Draw current counter value centered on the LCD."""
     img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     text = str(counter)
-    tw, th = draw.textsize(text, font=font)
+    bbox = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (WIDTH - tw) // 2
     y = (HEIGHT - th) // 2
     draw.text((x, y), text, font=font, fill=(255, 255, 255))
@@ -45,6 +48,7 @@ def update_display():
     disp.display(img)
 
 def bump():
+    """Increment counter and update LCD."""
     global counter
     counter += 1
     update_display()
