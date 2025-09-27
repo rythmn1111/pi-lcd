@@ -1,63 +1,25 @@
 #!/usr/bin/env python3
-# Display a JPEG on Waveshare 1.44" ST7735S (Pi Zero 2 W)
-# - Tries hardware BGR mode; falls back to software R/B swap if needed
-# - Handles EXIF orientation
-# - Simple "fit" resize preserving aspect ratio
+# Display images/GIFs/WebP on Waveshare 1.44" ST7735S using LCD144 helper
+# - Clean, simple interface
+# - Handles EXIF orientation, color correction, cropping
+# - Supports static images, GIFs, and WebP animations
 
 import argparse
 import time
 from pathlib import Path
 from PIL import Image, ImageOps, ImageCms, ExifTags
 
-# Try new lowercase import first, fall back to old uppercase if needed
+# Import the LCD144 helper class
 try:
-    import st7735
-    ST7735 = st7735
+    from lcd144 import LCD144
 except ImportError:
-    try:
-        import ST7735
-    except ImportError:
-        raise ImportError("Neither 'st7735' nor 'ST7735' module found. Please install: pip install st7735")
+    print("LCD144 helper not found. Please install it first:")
+    print("1. Create ~/libs/lcd144/ directory")
+    print("2. Add lcd144.py with the LCD144 class")
+    print("3. Run: cd ~/libs/lcd144 && pip3 install -e . --break-system-packages")
+    exit(1)
 
-# ==== Default GPIOs for Waveshare 1.44" HAT (adjust if yours differ) ====
-DC_PIN  = 25
-RST_PIN = 27
-BL_PIN  = 24       # set to None if your backlight isn't wired
-PORT    = 0        # SPI0
-CS      = 0        # CE0 => /dev/spidev0.0
-WIDTH   = 128
-HEIGHT  = 128
-SPI_HZ  = 8_000_000
-
-def load_image(path: Path, w: int, h: int) -> Image.Image:
-    """Open image (JPEG/GIF), honor EXIF orientation, convert to RGB, and letterbox-fit to (w,h)."""
-    img = Image.open(path)
-
-    # Auto-apply EXIF orientation if present
-    try:
-        img = ImageOps.exif_transpose(img)
-    except Exception:
-        pass
-
-    # Ensure RGB (handles JPEG in CMYK/other color spaces)
-    if img.mode != "RGB":
-        try:
-            img = img.convert("RGB")
-        except Exception:
-            # In rare CMYK cases, force via ImageCms if available
-            try:
-                srgb = ImageCms.createProfile("sRGB")
-                img = ImageCms.profileToProfile(img, img.info.get("icc_profile"), srgb, outputMode="RGB")
-            except Exception:
-                img = img.convert("RGB")
-
-    # Fit with aspect ratio, pad with black if needed
-    img = ImageOps.contain(img, (w, h))  # preserve aspect
-    canvas = Image.new("RGB", (w, h), (0, 0, 0))
-    x = (w - img.width) // 2
-    y = (h - img.height) // 2
-    canvas.paste(img, (x, y))
-    return canvas
+# Note: Image loading is now handled by LCD144.show_image()
 
 def load_animated_frames(path: Path, w: int, h: int) -> list:
     """Load all frames from an animated image (GIF/WebP) and prepare them for display."""
@@ -95,151 +57,18 @@ def load_animated_frames(path: Path, w: int, h: int) -> list:
     
     return frames, durations
 
-def create_test_pattern(w: int, h: int) -> Image.Image:
-    """Create a test pattern to help diagnose display issues."""
-    img = Image.new("RGB", (w, h), (0, 0, 0))  # Start with black
-    
-    # Draw colored rectangles to test display
-    from PIL import ImageDraw
-    draw = ImageDraw.Draw(img)
-    
-    # Red rectangle (top-left)
-    draw.rectangle([0, 0, w//2, h//2], fill=(255, 0, 0))
-    
-    # Green rectangle (top-right)
-    draw.rectangle([w//2, 0, w, h//2], fill=(0, 255, 0))
-    
-    # Blue rectangle (bottom-left)
-    draw.rectangle([0, h//2, w//2, h], fill=(0, 0, 255))
-    
-    # White rectangle (bottom-right)
-    draw.rectangle([w//2, h//2, w, h], fill=(255, 255, 255))
-    
-    return img
-
-def create_diagnostic_pattern(w: int, h: int) -> Image.Image:
-    """Create a comprehensive diagnostic pattern."""
-    img = Image.new("RGB", (w, h), (0, 0, 0))
-    from PIL import ImageDraw
-    draw = ImageDraw.Draw(img)
-    
-    # Test 1: Solid colors
-    draw.rectangle([0, 0, w, h//4], fill=(255, 0, 0))      # Red
-    draw.rectangle([0, h//4, w, h//2], fill=(0, 255, 0))   # Green  
-    draw.rectangle([0, h//2, w, 3*h//4], fill=(0, 0, 255)) # Blue
-    draw.rectangle([0, 3*h//4, w, h], fill=(255, 255, 255)) # White
-    
-    # Test 2: Pixel-by-pixel test (thin vertical lines)
-    for x in range(0, w, 4):
-        color = (255, 255, 255) if (x // 4) % 2 == 0 else (0, 0, 0)
-        draw.line([(x, 0), (x, h)], fill=color, width=1)
-    
-    return img
-
-def run_hardware_diagnostics(disp, color_mode, effective_width=WIDTH):
-    """Run comprehensive hardware diagnostics."""
-    print("🔍 Running hardware diagnostics...")
-    print("=" * 50)
-    
-    # Test 1: Basic connectivity
-    print("Test 1: Basic connectivity...")
-    try:
-        black_img = Image.new("RGB", (effective_width, HEIGHT), (0, 0, 0))
-        disp.display(black_img)
-        time.sleep(0.5)
-        print("✅ Display responds to commands")
-    except Exception as e:
-        print(f"❌ Display not responding: {e}")
-        return False
-    
-    # Test 2: Color channels
-    print("\nTest 2: Color channel test...")
-    colors = [
-        ("Red", (255, 0, 0)),
-        ("Green", (0, 255, 0)), 
-        ("Blue", (0, 0, 255)),
-        ("White", (255, 255, 255)),
-        ("Black", (0, 0, 0))
-    ]
-    
-    for name, color in colors:
-        print(f"  Showing {name}...")
-        test_img = Image.new("RGB", (effective_width, HEIGHT), color)
-        
-        # Apply color correction
-        if color_mode == "bgr":
-            r, g, b = test_img.split()
-            test_img = Image.merge("RGB", (b, g, r))
-        elif color_mode == "invert":
-            test_img = ImageOps.invert(test_img)
-            
-        disp.display(test_img)
-        time.sleep(1)
-    
-    # Test 3: Pixel precision test
-    print("\nTest 3: Pixel precision test...")
-    diag_img = create_diagnostic_pattern(effective_width, HEIGHT)
-    
-    # Apply color correction
-    if color_mode == "bgr":
-        r, g, b = diag_img.split()
-        diag_img = Image.merge("RGB", (b, g, r))
-    elif color_mode == "invert":
-        diag_img = ImageOps.invert(diag_img)
-    
-    disp.display(diag_img)
-    print("  Check for:")
-    print("  - 4 horizontal color bands (Red, Green, Blue, White)")
-    print("  - Vertical stripes (should be alternating black/white)")
-    print("  - Any vertical lines or color bleeding")
-    print("  - Any dead pixels or missing areas")
-    
-    time.sleep(3)
-    
-    print("\n" + "=" * 50)
-    print("Diagnostic complete!")
-    print("\nIf you see:")
-    print("✅ All colors display correctly → Hardware is fine, software issue")
-    print("❌ Missing colors or dead areas → Possible hardware issue")
-    print("⚠️  Vertical lines/bleeding → SPI timing issue (fixable)")
-    print("❌ No display at all → Hardware connection issue")
-    
-    return True
-
-def reset_display(disp):
-    """Perform a full display reset sequence."""
-    print("Performing full display reset...")
-    
-    # Clear display with black
-    black_img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
-    disp.display(black_img)
-    time.sleep(0.1)
-    
-    # Clear with white
-    white_img = Image.new("RGB", (WIDTH, HEIGHT), (255, 255, 255))
-    disp.display(white_img)
-    time.sleep(0.1)
-    
-    # Clear with black again
-    disp.display(black_img)
-    time.sleep(0.2)
-    
-    print("Display reset complete")
+# Note: Test patterns and diagnostics are now handled by LCD144.show_color()
 
 def main():
     p = argparse.ArgumentParser(description="Show images/GIFs/WebP on Waveshare 1.44\" ST7735S")
     p.add_argument("image", nargs="?", help="Path to an image, GIF, or WebP")
     p.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0, help="Display rotation")
     p.add_argument("--landscape", action="store_true", help="Force landscape mode (90 degree rotation)")
-    p.add_argument("--speed", type=int, default=SPI_HZ, help="SPI speed (Hz)")
-    p.add_argument("--color-mode", choices=("auto", "rgb", "bgr", "invert"), default="auto", 
-                   help="Color mode: auto (try different modes), rgb, bgr, or invert")
+    p.add_argument("--speed", type=int, default=1_000_000, help="SPI speed (Hz)")
+    p.add_argument("--color-mode", choices=("rgb", "bgr", "invert"), default="bgr", 
+                   help="Color mode: rgb, bgr, or invert")
     p.add_argument("--loop", type=int, default=0, help="Number of times to loop animated image (0 = infinite)")
     p.add_argument("--fps", type=float, default=None, help="Override animated image frame rate (FPS)")
-    p.add_argument("--clear", action="store_true", help="Clear display before showing image")
-    p.add_argument("--slow-spi", action="store_true", help="Use slower SPI speed to fix display issues")
-    p.add_argument("--ultra-slow", action="store_true", help="Use ultra-slow SPI speed (500kHz) for persistent issues")
-    p.add_argument("--reset-display", action="store_true", help="Perform full display reset before showing image")
     p.add_argument("--crop-right", type=int, default=0, help="Crop N pixels from right edge to avoid noise (default: 0)")
     p.add_argument("--test", action="store_true", help="Show test pattern instead of image")
     p.add_argument("--diagnose", action="store_true", help="Run comprehensive hardware diagnostics")
@@ -277,108 +106,34 @@ def main():
         if not img_path.exists():
             raise SystemExit(f"Image not found: {img_path}")
 
-    # Handle color mode based on user preference
-    if args.color_mode == "auto":
-        # Try different color modes to fix inversion
-        # Method 1: Try with bgr=False (RGB mode)
-        try:
-            disp = ST7735.ST7735(
-                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                spi_speed_hz=args.speed, bgr=False  # Try RGB mode first
-            )
-            color_mode = "rgb"
-        except TypeError:
-            # Older driver without `bgr` kwarg - try default
-            try:
-                disp = ST7735.ST7735(
-                    port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                    width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                    spi_speed_hz=args.speed
-                )
-                color_mode = "default"
-            except:
-                # Last resort: try with bgr=True
-                disp = ST7735.ST7735(
-                    port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                    width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                    spi_speed_hz=args.speed, bgr=True
-                )
-                color_mode = "bgr"
-    else:
-        # Use specified color mode
-        if args.color_mode == "rgb":
-            disp = ST7735.ST7735(
-                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                spi_speed_hz=args.speed, bgr=False
-            )
-            color_mode = "rgb"
-        elif args.color_mode == "bgr":
-            disp = ST7735.ST7735(
-                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                spi_speed_hz=args.speed, bgr=True
-            )
-            color_mode = "bgr"
-        else:  # invert mode
-            disp = ST7735.ST7735(
-                port=PORT, cs=CS, dc=DC_PIN, rst=RST_PIN, backlight=BL_PIN,
-                width=WIDTH, height=HEIGHT, rotation=args.rotation,
-                spi_speed_hz=args.speed
-            )
-            color_mode = "invert"
-
-    disp.begin()
+# Note: Display initialization is now handled by LCD144 class
 
     # Handle landscape mode
     if args.landscape:
         args.rotation = 90  # Force 90 degree rotation for landscape
     
-    # Handle display cropping
-    effective_width = WIDTH - args.crop_right
-    if args.crop_right > 0:
-        print(f"Cropping {args.crop_right} pixels from right edge (effective width: {effective_width})")
+    # Initialize LCD144 with settings
+    print(f"Initializing LCD144 with rotation={args.rotation}, speed={args.speed}Hz, crop={args.crop_right}px")
     
-    # Handle SPI speed modes
-    if args.ultra_slow:
-        args.speed = 500_000  # Use 500kHz for ultra-slow mode
-        print("Using ultra-slow SPI mode (500kHz) for persistent issues")
-    elif args.slow_spi:
-        args.speed = 1_000_000  # Use 1MHz instead of 8MHz
-        print("Using slow SPI mode (1MHz) to fix display issues")
-    
-    # Reset display if requested
-    if args.reset_display:
-        reset_display(disp)
-    
-    # Clear display if requested
-    if args.clear:
-        print("Clearing display...")
-        black_image = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
-        disp.display(black_image)
-        time.sleep(0.1)  # Give it time to clear
-    
-    # Run hardware diagnostics if requested
-    if args.diagnose:
-        run_hardware_diagnostics(disp, color_mode, effective_width)
-        return
+    lcd = LCD144(
+        rotation=args.rotation,
+        bgr=(args.color_mode == "bgr"),
+        invert=(args.color_mode == "invert"),
+        spi_hz=args.speed
+    )
     
     # Show test pattern if requested
     if args.test:
         print("Showing test pattern...")
-        test_img = create_test_pattern(effective_width, HEIGHT)
-        
-        # Apply color correction
-        if color_mode == "bgr":
-            r, g, b = test_img.split()
-            test_img = Image.merge("RGB", (b, g, r))
-        elif color_mode == "invert":
-            test_img = ImageOps.invert(test_img)
-        
-        disp.display(test_img)
-        print("Test pattern displayed. Check for:")
-        print("- Red (top-left), Green (top-right), Blue (bottom-left), White (bottom-right)")
+        lcd.show_color(255, 0, 0, mask_right_px=args.crop_right)  # Red
+        time.sleep(1)
+        lcd.show_color(0, 255, 0, mask_right_px=args.crop_right)  # Green
+        time.sleep(1)
+        lcd.show_color(0, 0, 255, mask_right_px=args.crop_right)  # Blue
+        time.sleep(1)
+        lcd.show_color(255, 255, 255, mask_right_px=args.crop_right)  # White
+        print("Test pattern complete. Check for:")
+        print("- Red, Green, Blue, White colors")
         print("- Any vertical lines or color bleeding")
         return
     
@@ -387,7 +142,7 @@ def main():
     
     if is_animated:
         # Handle animated GIF or WebP
-        frames, durations = load_animated_frames(img_path, effective_width, HEIGHT)
+        frames, durations = load_animated_frames(img_path, 128, 128)
         
         if not frames:
             raise SystemExit("No frames found in animated image")
@@ -403,22 +158,8 @@ def main():
         loop_count = 0
         while True:
             for i, (frame, duration) in enumerate(zip(frames, durations)):
-                # Apply color correction based on the mode
-                if color_mode == "bgr":
-                    # For BGR mode, swap R and B channels
-                    r, g, b = frame.split()
-                    frame = Image.merge("RGB", (b, g, r))
-                elif color_mode == "rgb":
-                    # For RGB mode, keep as is
-                    pass
-                elif color_mode == "invert":
-                    # Invert colors to fix inversion
-                    frame = ImageOps.invert(frame)
-                else:
-                    # For default mode, try inverting colors to fix the issue
-                    frame = ImageOps.invert(frame)
-                
-                disp.display(frame)
+                # Use LCD144 to display frame with cropping
+                lcd.show_image(frame, mask_right_px=args.crop_right)
                 
                 # Wait for frame duration (convert ms to seconds)
                 time.sleep(duration / 1000.0)
@@ -428,25 +169,9 @@ def main():
                 break
                 
     else:
-        # Handle static image
-        frame = load_image(img_path, effective_width, HEIGHT)
-
-        # Apply color correction based on the mode
-        if color_mode == "bgr":
-            # For BGR mode, swap R and B channels
-            r, g, b = frame.split()
-            frame = Image.merge("RGB", (b, g, r))
-        elif color_mode == "rgb":
-            # For RGB mode, keep as is
-            pass
-        elif color_mode == "invert":
-            # Invert colors to fix inversion
-            frame = ImageOps.invert(frame)
-        else:
-            # For default mode, try inverting colors to fix the issue
-            frame = ImageOps.invert(frame)
-
-        disp.display(frame)  # stays on screen until you draw again
+        # Handle static image - use LCD144's built-in image display
+        print(f"Displaying image: {img_path}")
+        lcd.show_image(str(img_path), mask_right_px=args.crop_right)
 
 if __name__ == "__main__":
     main()
