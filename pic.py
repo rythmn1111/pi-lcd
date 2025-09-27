@@ -158,8 +158,17 @@ def main():
         loop_count = 0
         while True:
             for i, (frame, duration) in enumerate(zip(frames, durations)):
-                # Use LCD144 to display frame with cropping
-                lcd.show_image(frame, mask_right_px=args.crop_right)
+                # Apply cropping to the frame
+                if args.crop_right > 0:
+                    from PIL import ImageDraw
+                    draw = ImageDraw.Draw(frame)
+                    draw.rectangle(
+                        [128 - args.crop_right, 0, 127, 127],
+                        fill=(0, 0, 0)
+                    )
+                
+                # Display the frame directly
+                lcd.disp.display(frame)
                 
                 # Wait for frame duration (convert ms to seconds)
                 time.sleep(duration / 1000.0)
